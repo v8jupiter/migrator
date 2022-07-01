@@ -1,0 +1,23 @@
+{
+  "name": "public",
+  "version": "1.0.0",
+  "description": "Migration script",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.1165.0",
+    "bluebird": "^3.7.2",
+    "boxen": "4.0",
+    "chalk": "2.4",
+    "decompress": "^4.2.1",
+    "decompress-targz": "^4.1.1",
+    "dotenv-safe": "^8.2.0",
+    "mongodb": "^4.7.0",
+    "mongodb-restore-dump": "^1.0.1",
+    "rimraf": "^3.0.2"
+  }
+}
