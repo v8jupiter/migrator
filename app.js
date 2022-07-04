@@ -28,9 +28,23 @@ console.log(msgBox);
 const mongoURL = dotenv.parsed.MONGODB_URI;
 console.log(chalk.white.bold("MongoDB URL: " + mongoURL));
 const client = new MongoClient(mongoURL);
+const awsS3BucketName = dotenv.parsed.AWS_S3_BUCKET;
+
+function getListOfPolicyFileInDirectory(dir) {
+    let pathDir = `${dir}/s3`;
+    let files = fs.readdirSync(pathDir);
+    if(files && files[1].includes('org::')) {
+        pathDir = `${pathDir}/${files[1]}`;
+        files = fs.readdirSync(pathDir).map(file => {
+         return path.join(pathDir, file);
+        });
+        return files
+    }
+    return [];
+}
 
 async function uploadPolicyFilesToS3(policyFiles, organization) {
-    const s3 = new AWS.S3({ params: { Bucket: dotenv.parsed.AWS_S3_BUCKET, timeout: 6000000 } });
+    const s3 = new AWS.S3({ params: { Bucket: awsS3BucketName, timeout: 6000000 } });
     let uploadedFiles = [];
     for (const policyFile of policyFiles) {
         try {
@@ -51,40 +65,17 @@ async function uploadPolicyFilesToS3(policyFiles, organization) {
       return uploadedFiles;
 }
 
-function getListOfPolicyFileInDirectory(dir) {
-    let pathDir = `${dir}/s3`;
-    let files = fs.readdirSync(pathDir);
-    if(files && files[1].includes('org::')) {
-        pathDir = `${pathDir}/${files[1]}`;
-        files = fs.readdirSync(pathDir).map(file => {
-         return path.join(pathDir, file);
-        });
-        return files
-    }
-    return [];
-}
-
-async function restoreMongoCollections(collections) {
-    await dropMongoCollections(collections);
-    const destPath = path.resolve(__dirname, "../backupData/dump/dash-rest"); //TODO:: get db name from url
-    const uri = dotenv.parsed.MONGODB_URI;
-    for (const collection of collections) {
-        await mongoRestore.collection({
-            uri,
-            database: 'dash-rest_restore',
-            collection: `back_${collection}`,
-            from: `${destPath}/${collection}.bson`,
-        });
-    }
-}
-
-async function dropMongoCollections(collections) {
-    console.log(chalk.white.bold("Drop collections: " + collections));
+async function dropBackMongoCollections() {
+    console.log(chalk.white.bold("Drop back_ collections: "));
     const mongoClient = await client.connect();
     const db = mongoClient.db("dash-rest_restore");
+    const collections = await db.listCollections().toArray();
     for (const collection of collections) {
         try {
-            await db.collection(`back_${collection}`).drop();
+            if(collection.name.includes("back_")) {
+                console.log(chalk.white.bold("Drop collections: " + collection.name));
+                await db.collection(collection.name).drop();
+            }
         } catch (error) {
             if(error.message.match(/ns not found/)) {
                 console.log(chalk.white.bold(`Collection back_${collection} not found`));
@@ -96,85 +87,130 @@ async function dropMongoCollections(collections) {
     await mongoClient.close();
 }
 
-async function copyUsers(organization) {
-    const mongoClient = await client.connect();
-    const db = mongoClient.db("dash-rest_restore");
-    const users = await (await db.collection("back_users").find({}).toArray()).map(user => {
-        if(user.organization) {
-            user.organization = organization._id;
-        }
-        return user;
-    });
-    const usersRestore = await db.collection("users").insertMany(users);
-    const organizationAffiliations = await (await db.collection("back_organizationaffiliations").find({}).toArray()).map(item => {
-        if(item.organization) {
-            item.organization = organization._id;
-        }
-        return item;
-    });
-    const organizationAffiliationsRestore = await db.collection("organizationaffiliations").insertMany(organizationAffiliations);
-    console.log(chalk.green.bold(`${usersRestore.insertedCount} users restored`));
-    console.log(chalk.green.bold(`${organizationAffiliationsRestore.insertedCount} organization affiliations restored`));
-    await mongoClient.close();
+async function movePolicyFiles(destPath, organization) {
+    const policyFiles = getListOfPolicyFileInDirectory(destPath);
+    console.log(chalk.white.bold("Policy Files which will be moved to S3: " + policyFiles));
+    const policyFilesUploaded = await uploadPolicyFilesToS3(policyFiles, organization);
+    console.log(chalk.green.bold("Policy Files uploaded to S3"));
+    return policyFilesUploaded;
 }
 
-async function copySettings() {
+async function backupAllCollections() {
+    console.log(chalk.green.bold("Backup collections..."));
     const mongoClient = await client.connect();
     const db = mongoClient.db("dash-rest_restore");
-    const settings = await db.collection("back_settings").find({}).toArray();
-    const settingsRestore = await db.collection("settings").insertMany(settings);
-    await mongoClient.close();
-}
-
-async function copyPolicyCollections(collectionsList) {
-    const mongoClient = await client.connect();
-    const db = mongoClient.db("dash-rest_restore");
-    for (const collection of collectionsList) {
-        const collectionRestore = await db.collection(collection).insertMany(await db.collection(collection).find({}).toArray());
+    const collections = await db.listCollections().toArray();
+    for (const collection of collections) {
+        if(!collection.name.includes("back_")) {
+            await db.collection(collection.name).rename(`back_${collection.name}`);
+        }
     }
     await mongoClient.close();
+    console.log(chalk.green.bold("Backup collections completed!"));
+}
+
+function getMongoDumpFiles(dir) {
+    let pathDir = `${dir}/dump/dash-rest`;
+    let files = fs.readdirSync(pathDir);
+    files = fs.readdirSync(pathDir).map(file => {
+         return path.join(pathDir, file);
+        }).filter(file => { return path.extname(file) === ".bson"; });
+    return files
+}
+
+async function restoreAllMongoCollections(destPath) {
+    console.log(chalk.green.bold("Restore collections..."));
+    const bsonFiles = getMongoDumpFiles(destPath);
+    const uri = dotenv.parsed.MONGODB_URI;
+    for (const bsonFile of bsonFiles) {
+        const collectionName = path.basename(bsonFile, ".bson");
+        await mongoRestore.collection({
+            uri,
+            database: 'dash-rest_restore',
+            collection: collectionName,
+            from: bsonFile,
+        });
+    }
+
+    console.log(chalk.green.bold("Restore collections completed!"));
+}
+
+async function getCurrentOrganization() {
+    console.log(chalk.green.bold("Read organization data from mongoDB..."));
+    const mongoClient = await client.connect();
+    const db = mongoClient.db("dash-rest_restore");
+    const organization = await client.db("dash-rest_restore").collection("organizations").findOne({});
+    if(!organization) {
+        throw new Error("Organization not found!");
+    }
+    await client.close();
+    console.log(chalk.white.bold(`Organization ${organization} found`));
+    return organization;
+}
+
+function getOrganizationReplacementRules() {
+    return [
+        {
+            "collection": "organizations",
+            "field": "_code",
+        },
+        {
+            "collection": "organizations",
+            "field": "_coreId",
+        },
+        {
+            "collection": "organizations",
+            "field": "_dashApiSecret",
+        },
+        {
+            "collection": "organizations",
+            "field": "orgCoreToken",
+        }
+    ];
+}
+
+async function updateOrganizationInMongoCollection(organization) {
+    console.log(chalk.green.bold("Update organization data in mongoDB..."));
+    const rules = getOrganizationReplacementRules();
+    const mongoClient = await client.connect();
+    const db = mongoClient.db("dash-rest_restore");
+    for (const rule of rules) {
+        const collection = db.collection(rule.collection);
+        const updateResult = await collection.updateMany({}, { $set: { [rule.field]: organization[rule.field] } });
+        console.log(chalk.white.bold(`${updateResult.modifiedCount} documents updated in ${rule.collection}`));
+    }
+    await mongoClient.close();
+    console.log(chalk.green.bold("Update organization data in mongoDB completed!"));
+}   
+
+async function updateBucketForPolicyFilesInMongoCollection(bucketName) {
+    console.log(chalk.green.bold("Update bucket name in mongoDB..."));
+    const mongoClient = await client.connect();
+    const db = mongoClient.db("dash-rest_restore");
+    await db.collection("files").updateMany({}, { $set: { bucket: bucketName } });
+    await mongoClient.close();
+    console.log(chalk.green.bold("Update bucket name in mongoDB completed!"));
 }
 
 (async ()=>{
     try {
+        console.log(chalk.white.bold("Start migration process..."));
         const fileName = `dump.tar.gz`;
         const filePath = path.resolve(__dirname, "../", fileName);
         const destPath = path.resolve(__dirname, "../backupData");
         console.log(destPath);
         const unzip = await decompress(filePath, destPath, { plugins: [decompressTargz()] });
         console.log(chalk.green.bold("Decompression completed!"));
-        console.log(chalk.green.bold("Read data from mongoDB..."));
-        const organization = await client.db("dash-rest_restore").collection("organizations").findOne({});
-        if(!organization) {
-            throw new Error("Organization not found!");
-        }
-        await client.close();
-
-        const policyFiles = getListOfPolicyFileInDirectory(destPath);
-        console.log(chalk.white.bold("Policy Files which will be moved to S3: " + policyFiles));
-        // const uploadedPolicyFiles = await uploadPolicyFilesToS3(policyFiles, organization);
-        // if(uploadedPolicyFiles.length) {
-
-        // }
-        console.log(chalk.white.bold("Restore MongoDb collections..."));
-        await restoreMongoCollections(['settings', 'users', 'organizations', 'organizationaffiliations']);
-        console.log(chalk.green.bold("Restore MongoDb collections completed!"));
-        console.log(chalk.green.bold("Migrate users..."));
-        await copyUsers(organization);
-        console.log(chalk.green.bold("Migrate users completed!"));
-        console.log(chalk.green.bold("Migrate settings..."));
-        // await copySettings();
-        console.log(chalk.green.bold("Migrate settings completed!"));
-        console.log(chalk.green.bold("Migrate policy collections..."));
-        console.log(chalk.green.bold("Migrate policy collections completed!"));
+        const newOrganization = await getCurrentOrganization();
+        await dropBackMongoCollections();
+        await backupAllCollections();
+        await restoreAllMongoCollections(destPath);
+        const dumpedORganization = await getCurrentOrganization();
+        await updateOrganizationInMongoCollection(newOrganization);
+        await updateBucketForPolicyFilesInMongoCollection(awsS3BucketName);
+        await movePolicyFiles(destPath, newOrganization);
+        console.log(chalk.green.bold("Migration completed!"));
     } catch (error) {
-        console.log(chalk.red.bold("Decompression failed!"), error);
-    } finally {
-        // Ensures that the client will close when you finish/error
-        await client.close();
-        console.log(chalk.green.bold("MongoDB connection closed!"));
+        console.log(chalk.red.bold("Migration failed! ERROR:"), error);
     }
 })();
-
-
-
