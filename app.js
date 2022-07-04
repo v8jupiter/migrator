@@ -14,6 +14,8 @@ const Promise = require('bluebird');
 const readFileAsync = Promise.promisify(fs.readFile);
 const mongoRestore = require('mongodb-restore-dump');
 const { MongoClient } = require("mongodb");
+const yargs = require("yargs");
+const axios = require('axios');
 
 const greeting = chalk.white.bold("Start migration process...");
 const boxenOptions = {
@@ -34,7 +36,7 @@ const mongoDBName = mongoURL.split('/')[3].split('?')[0];
 function getListOfPolicyFileInDirectory(dir) {
     let pathDir = `${dir}/s3`;
     let files = fs.readdirSync(pathDir);
-    if(files && files[1].includes('org::')) {
+    if(files && files[1] && files[1].includes('org::')) {
         pathDir = `${pathDir}/${files[1]}`;
         files = fs.readdirSync(pathDir).map(file => {
          return path.join(pathDir, file);
@@ -193,10 +195,45 @@ async function updateBucketForPolicyFilesInMongoCollection(bucketName) {
     console.log(chalk.green.bold("Update bucket name in mongoDB completed!"));
 }
 
+async function downloadBackup(s3link, fileName) {
+    console.log(chalk.white.bold("Download backup..."));
+    const filePath = `${__dirname}/${fileName}`;
+    const file = fs.createWriteStream(filePath);
+    const response = await axios.get(s3link, { responseType: 'stream' });
+    response.data.pipe(file);
+    return new Promise((resolve, reject) => {
+        file.on('finish', () => {
+            file.close();
+            console.log(chalk.green.bold("Download backup completed!"));
+            resolve(filePath);
+        });
+        file.on('error', err => {
+            fs.unlink(filePath);
+            reject(err);
+        });
+    });
+}
+
 (async ()=>{
     try {
+        const options = yargs
+            .usage("Usage: -u <s3_public_url>")
+            .option("u", { alias: "s3url", describe: "Public S3 URL for tar.gz dump file", type: "string", demandOption: true })
+            .check(argv => {
+                if(!argv.s3url) {
+                    throw new Error("URL is required!");
+                }
+                if(!argv.s3url.match(/^https:\/\/dash-backup-[a-zA-Z0-9-]+\.s3\.amazonaws\.com\/[a-zA-Z0-9-_]+\.tar\.gz$/)) {
+                    throw new Error("URL is not S3 valid!");
+                } else {
+                    return true;
+                }
+            })
+            .argv;
+
         console.log(chalk.white.bold("Start migration process..."));
         const fileName = `dump.tar.gz`;
+        await downloadBackup(options.s3url, fileName);
         const filePath = path.resolve(__dirname, "../", fileName);
         const destPath = path.resolve(__dirname, "../backupData");
         console.log(destPath);
