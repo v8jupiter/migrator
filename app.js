@@ -197,7 +197,7 @@ async function updateBucketForPolicyFilesInMongoCollection(bucketName) {
 
 async function downloadBackup(s3link, fileName) {
     console.log(chalk.white.bold("Download backup..."));
-    const filePath = `${__dirname}/${fileName}`;
+    const filePath = `${__dirname}/../${fileName}`;
     const file = fs.createWriteStream(filePath);
     const response = await axios.get(s3link, { responseType: 'stream' });
     response.data.pipe(file);
