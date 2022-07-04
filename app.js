@@ -29,6 +29,7 @@ const mongoURL = dotenv.parsed.MONGODB_URI;
 console.log(chalk.white.bold("MongoDB URL: " + mongoURL));
 const client = new MongoClient(mongoURL);
 const awsS3BucketName = dotenv.parsed.AWS_S3_BUCKET;
+const mongoDBName = mongoURL.split('/')[3].split('?')[0];
 
 function getListOfPolicyFileInDirectory(dir) {
     let pathDir = `${dir}/s3`;
@@ -68,7 +69,7 @@ async function uploadPolicyFilesToS3(policyFiles, organization) {
 async function dropBackMongoCollections() {
     console.log(chalk.white.bold("Drop back_ collections: "));
     const mongoClient = await client.connect();
-    const db = mongoClient.db("dash-rest_restore");
+    const db = mongoClient.db(mongoDBName);
     const collections = await db.listCollections().toArray();
     for (const collection of collections) {
         try {
@@ -98,7 +99,7 @@ async function movePolicyFiles(destPath, organization) {
 async function backupAllCollections() {
     console.log(chalk.green.bold("Backup collections..."));
     const mongoClient = await client.connect();
-    const db = mongoClient.db("dash-rest_restore");
+    const db = mongoClient.db(mongoDBName);
     const collections = await db.listCollections().toArray();
     for (const collection of collections) {
         if(!collection.name.includes("back_")) {
@@ -138,8 +139,8 @@ async function restoreAllMongoCollections(destPath) {
 async function getCurrentOrganization() {
     console.log(chalk.green.bold("Read organization data from mongoDB..."));
     const mongoClient = await client.connect();
-    const db = mongoClient.db("dash-rest_restore");
-    const organization = await client.db("dash-rest_restore").collection("organizations").findOne({});
+    const db = mongoClient.db(mongoDBName);
+    const organization = await db.collection("organizations").findOne({});
     if(!organization) {
         throw new Error("Organization not found!");
     }
@@ -173,7 +174,7 @@ async function updateOrganizationInMongoCollection(organization) {
     console.log(chalk.green.bold("Update organization data in mongoDB..."));
     const rules = getOrganizationReplacementRules();
     const mongoClient = await client.connect();
-    const db = mongoClient.db("dash-rest_restore");
+    const db = mongoClient.db(mongoDBName);
     for (const rule of rules) {
         const collection = db.collection(rule.collection);
         const updateResult = await collection.updateMany({}, { $set: { [rule.field]: organization[rule.field] } });
@@ -186,7 +187,7 @@ async function updateOrganizationInMongoCollection(organization) {
 async function updateBucketForPolicyFilesInMongoCollection(bucketName) {
     console.log(chalk.green.bold("Update bucket name in mongoDB..."));
     const mongoClient = await client.connect();
-    const db = mongoClient.db("dash-rest_restore");
+    const db = mongoClient.db(mongoDBName);
     await db.collection("files").updateMany({}, { $set: { bucket: bucketName } });
     await mongoClient.close();
     console.log(chalk.green.bold("Update bucket name in mongoDB completed!"));
