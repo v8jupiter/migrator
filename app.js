@@ -252,6 +252,15 @@ async function startStopPm2(action) {
     console.log(chalk.green.bold(`${action} PM2 completed!`));
 }
 
+async function runMongoMigrations() {
+    console.log(chalk.green.bold("Run mongo migrations..."));
+    await exec({ 
+        path: `${__dirname}/../dash-rest`,
+        cmd: `npm run migrate` 
+    });
+    console.log(chalk.green.bold("Run mongo migrations completed!"));
+}
+
 (async ()=>{
     try {
         const options = yargs
@@ -293,11 +302,13 @@ async function startStopPm2(action) {
         await replaceTemplateUrlInMongoSettings();
         await removeSSLDomainFromMongoSettings();
         await disconnectAllAWSaccounts();
-        showColorBox("Migration completed!")
+        
         if(!options.local) {
+            await runMongoMigrations();
             await startStopPm2("start all");
             await startStopPm2("status")
         }
+        showColorBox("Migration completed!")
     } catch (error) {
         console.log(chalk.red.bold("Migration failed! ERROR:"), error);
     }
