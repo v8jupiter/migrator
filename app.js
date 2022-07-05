@@ -298,7 +298,7 @@ async function runMongoMigrations() {
         const dumpedORganization = await getCurrentOrganization();
         await updateOrganizationInMongoCollection(newOrganization);
         await updateBucketForPolicyFilesInMongoCollection(awsS3BucketName);
-        await movePolicyFiles(destPath, newOrganization);
+        await movePolicyFiles(destPath, dumpedORganization);
         await replaceTemplateUrlInMongoSettings();
         await removeSSLDomainFromMongoSettings();
         await disconnectAllAWSaccounts();
