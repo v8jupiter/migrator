@@ -19,6 +19,7 @@
     "dotenv-safe": "^8.2.0",
     "mongodb": "^4.7.0",
     "mongodb-restore-dump": "^1.0.1",
+    "node-async-exec": "^1.2.0",
     "rimraf": "^3.0.2",
     "yargs": "^17.5.1"
   }

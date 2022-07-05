@@ -16,6 +16,7 @@ const mongoRestore = require('mongodb-restore-dump');
 const { MongoClient } = require("mongodb");
 const yargs = require("yargs");
 const axios = require('axios');
+const exec = require('node-async-exec');
 
 const mongoURL = dotenv.parsed.MONGODB_URI;
 console.log(chalk.white.bold("MongoDB URL: " + mongoURL));
@@ -245,6 +246,12 @@ async function disconnectAllAWSaccounts() {
     console.log(chalk.green.bold("Disconnect all AWS accounts completed!"));
 }
 
+async function startStopPm2(action) {
+    console.log(chalk.white.bold(`${action} PM2...`));
+    await exec({ cmd: `pm2 ${action}` });
+    console.log(chalk.green.bold(`${action} PM2 completed!`));
+}
+
 (async ()=>{
     try {
         const options = yargs
@@ -260,9 +267,14 @@ async function disconnectAllAWSaccounts() {
                     return true;
                 }
             })
+            .boolean("local")
             .argv;
 
+        console.log(options.d? "Dump mode": "Restore mode");
         showColorBox("Start migration process...")
+        if(!options.local) {
+            await startStopPm2("stop all");
+        }
         const fileName = `dump.tar.gz`;
         await downloadBackup(options.s3url, fileName);
         const filePath = path.resolve(__dirname, "../", fileName);
@@ -282,6 +294,10 @@ async function disconnectAllAWSaccounts() {
         await removeSSLDomainFromMongoSettings();
         await disconnectAllAWSaccounts();
         showColorBox("Migration completed!")
+        if(!options.local) {
+            await startStopPm2("start all");
+            await startStopPm2("status")
+        }
     } catch (error) {
         console.log(chalk.red.bold("Migration failed! ERROR:"), error);
     }
