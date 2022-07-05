@@ -7,7 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const rimraf = require("rimraf");
 const dotenv = require('dotenv-safe').config({
-    path: '../../rest/.env',
+    path: '../dash-rest/.env',
 });
 const AWS = require('aws-sdk');
 const Promise = require('bluebird');
@@ -133,7 +133,7 @@ async function restoreAllMongoCollections(destPath) {
         const collectionName = path.basename(bsonFile, ".bson");
         await mongoRestore.collection({
             uri,
-            database: 'dash-rest_restore',
+            database: mongoDBName,
             collection: collectionName,
             from: bsonFile,
         });
