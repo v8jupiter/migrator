@@ -222,8 +222,8 @@ async function replaceTemplateUrlInMongoSettings() {
     console.log(chalk.green.bold("Update template url in mongoDB..."));
     const mongoClient = await client.connect();
     const db = mongoClient.db(mongoDBName);
-    const templateUrl = db.collection(`back_settings`).findOne({dashSettingKey: "templateUrl"});
-    await db.collection("settings").updateOne({dashSettingKey: "templateUrl"}, { $set: { value: templateUrl } });
+    const templateUrlRow = db.collection(`back_settings`).findOne({dashSettingKey: "templateUrl"});
+    await db.collection("settings").updateOne({dashSettingKey: "templateUrl"}, { $set: { value: templateUrlRow.value } });
     await mongoClient.close();
     console.log(chalk.green.bold("Update template url in mongoDB completed!"));
 }
