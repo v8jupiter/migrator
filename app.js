@@ -17,21 +17,24 @@ const { MongoClient } = require("mongodb");
 const yargs = require("yargs");
 const axios = require('axios');
 
-const greeting = chalk.white.bold("Start migration process...");
-const boxenOptions = {
- padding: 1,
- margin: 1,
- borderStyle: "round",
- borderColor: "green",
- backgroundColor: "#555555"
-};
-const msgBox = boxen( greeting, boxenOptions );
-console.log(msgBox);
 const mongoURL = dotenv.parsed.MONGODB_URI;
 console.log(chalk.white.bold("MongoDB URL: " + mongoURL));
 const client = new MongoClient(mongoURL);
 const awsS3BucketName = dotenv.parsed.AWS_S3_BUCKET;
 const mongoDBName = mongoURL.split('/')[3].split('?')[0];
+
+
+function showColorBox(msg) {
+    const boxenOptions = {
+        padding: 1,
+        margin: 1,
+        borderStyle: "round",
+        borderColor: "green",
+        backgroundColor: "#555555"
+    };
+    const msgBox = boxen( msg, boxenOptions );
+    console.log(msgBox);
+}
 
 function getListOfPolicyFileInDirectory(dir) {
     let pathDir = `${dir}/s3`;
@@ -214,6 +217,34 @@ async function downloadBackup(s3link, fileName) {
     });
 }
 
+async function replaceTemplateUrlInMongoSettings() {
+    console.log(chalk.green.bold("Update template url in mongoDB..."));
+    const mongoClient = await client.connect();
+    const db = mongoClient.db(mongoDBName);
+    const templateUrl = db.collection(`back_settings`).findOne({dashSettingKey: "templateUrl"});
+    await db.collection("settings").updateOne({dashSettingKey: "templateUrl"}, { $set: { value: templateUrl } });
+    await mongoClient.close();
+    console.log(chalk.green.bold("Update template url in mongoDB completed!"));
+}
+
+async function removeSSLDomainFromMongoSettings() {
+    console.log(chalk.green.bold("Remove SSL domain from mongoDB..."));
+    const mongoClient = await client.connect();
+    const db = mongoClient.db(mongoDBName);
+    await db.collection("settings").deleteOne({dashSettingKey: "sslDomain"});
+    await mongoClient.close();
+    console.log(chalk.green.bold("Remove SSL domain from mongoDB completed!"));
+}
+
+async function disconnectAllAWSaccounts() {
+    console.log(chalk.green.bold("Disconnect all AWS accounts..."));
+    const mongoClient = await client.connect();
+    const db = mongoClient.db(mongoDBName);
+    await db.collection("awsaccounts").updateMany({}, { $set: { isValidated: false } }); 
+    mongoClient.close();
+    console.log(chalk.green.bold("Disconnect all AWS accounts completed!"));
+}
+
 (async ()=>{
     try {
         const options = yargs
@@ -231,7 +262,7 @@ async function downloadBackup(s3link, fileName) {
             })
             .argv;
 
-        console.log(chalk.white.bold("Start migration process..."));
+        showColorBox("Start migration process...")
         const fileName = `dump.tar.gz`;
         await downloadBackup(options.s3url, fileName);
         const filePath = path.resolve(__dirname, "../", fileName);
@@ -247,7 +278,10 @@ async function downloadBackup(s3link, fileName) {
         await updateOrganizationInMongoCollection(newOrganization);
         await updateBucketForPolicyFilesInMongoCollection(awsS3BucketName);
         await movePolicyFiles(destPath, newOrganization);
-        console.log(chalk.green.bold("Migration completed!"));
+        await replaceTemplateUrlInMongoSettings();
+        await removeSSLDomainFromMongoSettings();
+        await disconnectAllAWSaccounts();
+        showColorBox("Migration completed!")
     } catch (error) {
         console.log(chalk.red.bold("Migration failed! ERROR:"), error);
     }
