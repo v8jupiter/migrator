@@ -22,7 +22,8 @@ const mongoURL = dotenv.parsed.MONGODB_URI;
 console.log(chalk.white.bold("MongoDB URL: " + mongoURL));
 const client = new MongoClient(mongoURL);
 const awsS3BucketName = dotenv.parsed.AWS_S3_BUCKET;
-const mongoDBName = mongoURL.split('/')[3].split('?')[0];
+const dashClientId = dotenv.parsed.DASH_CLIENT_ID;
+const mongoDBName = dashClientId.replaceAll(".", "-");
 
 
 function showColorBox(msg) {
@@ -50,7 +51,7 @@ function getListOfPolicyFileInDirectory(dir) {
     return [];
 }
 
-async function uploadPolicyFilesToS3(policyFiles, organization) {
+async function uploadPolicyFilesToS3(policyFiles) {
     const s3 = new AWS.S3({ params: { Bucket: awsS3BucketName, timeout: 6000000 } });
     let uploadedFiles = [];
     for (const policyFile of policyFiles) {
@@ -58,7 +59,7 @@ async function uploadPolicyFilesToS3(policyFiles, organization) {
         const fileContent = await readFileAsync(policyFile);
         const fileName = path.basename(policyFile);
         const params = {
-          Key: `${organization._id}/${fileName}`,
+          Key: `${dashClientId}/${fileName}`,
           Body: fileContent
         };
           const stored = await s3.upload(params).promise()
@@ -94,10 +95,10 @@ async function dropBackMongoCollections() {
     await mongoClient.close();
 }
 
-async function movePolicyFiles(destPath, organization) {
+async function movePolicyFiles(destPath) {
     const policyFiles = getListOfPolicyFileInDirectory(destPath);
     console.log(chalk.white.bold("Policy Files which will be moved to S3: " + policyFiles));
-    const policyFilesUploaded = await uploadPolicyFilesToS3(policyFiles, organization);
+    const policyFilesUploaded = await uploadPolicyFilesToS3(policyFiles);
     console.log(chalk.green.bold("Policy Files uploaded to S3"));
     return policyFilesUploaded;
 }
@@ -298,7 +299,7 @@ async function runMongoMigrations() {
         const dumpedORganization = await getCurrentOrganization();
         await updateOrganizationInMongoCollection(newOrganization);
         await updateBucketForPolicyFilesInMongoCollection(awsS3BucketName);
-        await movePolicyFiles(destPath, dumpedORganization);
+        await movePolicyFiles(destPath);
         await replaceTemplateUrlInMongoSettings();
         await removeSSLDomainFromMongoSettings();
         await disconnectAllAWSaccounts();
