@@ -20,11 +20,17 @@ const exec = require('node-async-exec');
 
 const mongoURL = dotenv.parsed.MONGODB_URI;
 console.log(chalk.white.bold("MongoDB URL: " + mongoURL));
-const client = new MongoClient(mongoURL);
+const client = getMongoClient();
 const awsS3BucketName = dotenv.parsed.AWS_S3_BUCKET;
 const dashClientId = dotenv.parsed.DASH_CLIENT_ID;
-const mongoDBName = dashClientId.replaceAll(".", "-");
+const mongoDBName = dashClientId.replace(/\./g, "-");
 
+function getMongoClient() {
+    const uri = mongoURL.replace('&sslCAFile=/etc/ssl/rds-combined-ca-bundle.pem','');
+    return new MongoClient(uri, {
+        tlsCAFile: '/etc/ssl/rds-combined-ca-bundle.pem',
+    });
+}
 
 function showColorBox(msg) {
     const boxenOptions = {
@@ -133,7 +139,7 @@ async function restoreAllMongoCollections(destPath) {
     for (const bsonFile of bsonFiles) {
         const collectionName = path.basename(bsonFile, ".bson");
         await mongoRestore.collection({
-            uri,
+            con: await client.connect(uri),
             database: mongoDBName,
             collection: collectionName,
             from: bsonFile,
