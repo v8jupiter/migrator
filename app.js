@@ -139,7 +139,7 @@ async function restoreAllMongoCollections(destPath) {
     for (const bsonFile of bsonFiles) {
         const collectionName = path.basename(bsonFile, ".bson");
         await mongoRestore.collection({
-            con: await client.connect(uri),
+            con: await client.connect(),
             database: mongoDBName,
             collection: collectionName,
             from: bsonFile,
@@ -230,9 +230,11 @@ async function replaceTemplateUrlInMongoSettings() {
     const mongoClient = await client.connect();
     const db = mongoClient.db(mongoDBName);
     const templateUrlRow = await db.collection(`back_settings`).findOne({dashSettingKey: "templateUrl"});
-    await db.collection("settings").updateOne({dashSettingKey: "templateUrl"}, { $set: { value: templateUrlRow.value } });
-    await mongoClient.close();
-    console.log(chalk.green.bold("Update template url in mongoDB completed!"));
+    if (templateUrlRow) {
+        await db.collection("settings").updateOne({dashSettingKey: "templateUrl"}, { $set: { value: templateUrlRow.value } });
+        await mongoClient.close();
+        console.log(chalk.green.bold("Update template url in mongoDB completed!"));
+    }
 }
 
 async function removeSSLDomainFromMongoSettings() {
