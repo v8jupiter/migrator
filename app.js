@@ -279,7 +279,7 @@ async function runMongoMigrations() {
                 if(!argv.s3url) {
                     throw new Error("URL is required!");
                 }
-                if(!argv.s3url.match(/^https:\/\/dash-backup-[a-zA-Z0-9-]+\.s3\.amazonaws\.com\/[a-zA-Z0-9-_]+\.tar\.gz$/)) {
+                if(!argv.s3url.match(/^https:\/\/dash-backup-[a-zA-Z0-9-]+\.s3\.amazonaws\.com\/[a-zA-Z0-9-_\/]+\.tar\.gz$/)) {
                     throw new Error("URL is not S3 valid!");
                 } else {
                     return true;
