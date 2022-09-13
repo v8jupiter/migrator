@@ -270,6 +270,36 @@ async function runMongoMigrations() {
     console.log(chalk.green.bold("Run mongo migrations completed!"));
 }
 
+async function clearSubscriptions() {
+    console.log(chalk.green.bold("Clear subscriptions..."));
+    const mongoClient = await client.connect();
+    const db = mongoClient.db(mongoDBName);
+    const collections = await db.listCollections().toArray();
+    for (const collection of collections) {
+        try {
+            if(collection.name.includes("subscriptions")) {
+                await db.collection("subscriptions").deleteMany({});
+            }
+        } catch (error) {
+            console.log(chalk.red.bold('Can`t clear AWS subscription from collection, ERROR: ', error));
+        };
+    }
+    await mongoClient.close();
+    console.log(chalk.green.bold("Clear subscriptions completed!"));
+}
+
+async function addSupportAccount() {
+    console.log(chalk.green.bold("Add support account..."));
+    await new Promise(r => setTimeout(r, 10000));
+    const dashURL = 'http://0.0.0.0:9003';
+    const result = await axios.post(`${dashUrl}/users/support`, {}, {
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    });
+    console.log(chalk.green.bold("Add support account completed!"));
+}
+
 (async ()=>{
     try {
         const options = yargs
@@ -279,7 +309,7 @@ async function runMongoMigrations() {
                 if(!argv.s3url) {
                     throw new Error("URL is required!");
                 }
-                if(!argv.s3url.match(/^https:\/\/dash-backup-[a-zA-Z0-9-]+\.s3\.amazonaws\.com\/[a-zA-Z0-9-_\/]+\.tar\.gz$/)) {
+                if(!argv.s3url.match(/^https:\/\/[a-zA-Z0-9-]+\.s3\.amazonaws\.com\/[a-zA-Z0-9-_\/]+\.tar\.gz$/)) {
                     throw new Error("URL is not S3 valid!");
                 } else {
                     return true;
@@ -311,12 +341,14 @@ async function runMongoMigrations() {
         await replaceTemplateUrlInMongoSettings();
         await removeSSLDomainFromMongoSettings();
         await disconnectAllAWSaccounts();
+        await clearSubscriptions();
         
         if(!options.local) {
             await runMongoMigrations();
             await startStopPm2("start all");
             await startStopPm2("status")
         }
+        await addSupportAccount();
         showColorBox("Migration completed!")
     } catch (error) {
         console.log(chalk.red.bold("Migration failed! ERROR:"), error);
