@@ -292,7 +292,7 @@ async function addSupportAccount() {
     console.log(chalk.green.bold("Add support account..."));
     await new Promise(r => setTimeout(r, 10000));
     const dashURL = 'http://0.0.0.0:9003';
-    const result = await axios.post(`${dashUrl}/users/support`, {}, {
+    const result = await axios.post(`${dashURL}/users/support`, {}, {
         headers: {
             'Content-Type': 'application/json',
         }
