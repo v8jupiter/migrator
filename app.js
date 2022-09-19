@@ -115,7 +115,7 @@ async function backupAllCollections() {
     const db = mongoClient.db(mongoDBName);
     const collections = await db.listCollections().toArray();
     for (const collection of collections) {
-        if(!collection.name.includes("back_") || collection.name.includes("jobs")) { // jobs should be not from backup.
+        if(!collection.name.includes("back_") && !collection.name.includes("jobs")) { // jobs should be not from backup.
             await db.collection(collection.name).rename(`back_${collection.name}`);
         }
     }
@@ -204,7 +204,7 @@ async function updatePolicyFilesInMongoCollection(bucketName, dashClientId) {
     const policyFiles = await db.collection("files").find({}).toArray();
     for (const policyFile of policyFiles) {
         const key = `${dashClientId}/${policyFile.name}`;
-        await db.collection("files").updateOne({ name: fileName }, { $set: { key: key,  bucket: bucketName} });
+        await db.collection("files").updateOne({ name: policyFile.name }, { $set: { key: key,  bucket: bucketName} });
     }
     await mongoClient.close();
     console.log(chalk.green.bold("Update policy files key and bucket in mongoDB completed!"));
