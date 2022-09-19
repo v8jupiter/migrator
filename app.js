@@ -115,7 +115,7 @@ async function backupAllCollections() {
     const db = mongoClient.db(mongoDBName);
     const collections = await db.listCollections().toArray();
     for (const collection of collections) {
-        if(!collection.name.includes("back_")) {
+        if(!collection.name.includes("back_") || collection.name.includes("jobs")) { // jobs should be not from backup.
             await db.collection(collection.name).rename(`back_${collection.name}`);
         }
     }
@@ -197,13 +197,17 @@ async function updateOrganizationInMongoCollection(organization) {
     console.log(chalk.green.bold("Update organization data in mongoDB completed!"));
 }   
 
-async function updateBucketForPolicyFilesInMongoCollection(bucketName) {
-    console.log(chalk.green.bold("Update bucket name in mongoDB..."));
+async function updatePolicyFilesInMongoCollection(bucketName, dashClientId) {
+    console.log(chalk.green.bold("Update policy files key and bucket in mongoDB..."));
     const mongoClient = await client.connect();
     const db = mongoClient.db(mongoDBName);
-    await db.collection("files").updateMany({}, { $set: { bucket: bucketName } });
+    const policyFiles = await db.collection("files").find({}).toArray();
+    for (const policyFile of policyFiles) {
+        const key = `${dashClientId}/${policyFile.name}`;
+        await db.collection("files").updateOne({ name: fileName }, { $set: { key: key,  bucket: bucketName} });
+    }
     await mongoClient.close();
-    console.log(chalk.green.bold("Update bucket name in mongoDB completed!"));
+    console.log(chalk.green.bold("Update policy files key and bucket in mongoDB completed!"));
 }
 
 async function downloadBackup(s3link, fileName) {
@@ -288,16 +292,25 @@ async function clearSubscriptions() {
     console.log(chalk.green.bold("Clear subscriptions completed!"));
 }
 
-async function addSupportAccount() {
-    console.log(chalk.green.bold("Add support account..."));
-    await new Promise(r => setTimeout(r, 10000));
+async function addSupportAccount(attempt = 0) {
+    console.log(chalk.green.bold("Add support account attempt: ", attempt));
+    await new Promise(r => setTimeout(r, 15000));
     const dashURL = 'http://0.0.0.0:9003';
-    const result = await axios.post(`${dashURL}/users/support`, {}, {
-        headers: {
-            'Content-Type': 'application/json',
+    try {
+        const result = await axios.post(`${dashURL}/users/support`, {}, {
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        console.log(chalk.green.bold("Add support account completed!"));
+    } catch (error) {
+        if (attempt < 8) {
+            return addSupportAccount(attempt + 1);
+        } else {
+            console.log(chalk.red.bold('Can`t add support account, ERROR: ', error));
+            throw error;
         }
-    });
-    console.log(chalk.green.bold("Add support account completed!"));
+    };
 }
 
 (async ()=>{
@@ -336,7 +349,7 @@ async function addSupportAccount() {
         await restoreAllMongoCollections(destPath);
         const dumpedORganization = await getCurrentOrganization();
         await updateOrganizationInMongoCollection(newOrganization);
-        await updateBucketForPolicyFilesInMongoCollection(awsS3BucketName);
+        await updatePolicyFilesInMongoCollection(awsS3BucketName, dashClientId);
         await movePolicyFiles(destPath);
         await replaceTemplateUrlInMongoSettings();
         await removeSSLDomainFromMongoSettings();
