@@ -316,6 +316,14 @@ async function addSupportAccount(attempt = 0) {
     };
 }
 
+async function cleanup() {
+    console.log(chalk.green.bold("Cleanup..."));
+    await exec({ cmd: `rm -rf ${__dirname}/../dump.tar.gz` });
+    await exec({ cmd: `rm -rf ${__dirname}/../backupData` });
+    await dropBackMongoCollections();
+    console.log(chalk.green.bold("Cleanup completed!"));
+}
+
 (async ()=>{
     try {
         const options = yargs
@@ -365,6 +373,7 @@ async function addSupportAccount(attempt = 0) {
             await startStopPm2("status")
         }
         await addSupportAccount();
+        await cleanup();
         showColorBox("Migration completed!")
     } catch (error) {
         console.log(chalk.red.bold("Migration failed! ERROR:"), error);
