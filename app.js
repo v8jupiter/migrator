@@ -203,8 +203,11 @@ async function updatePolicyFilesInMongoCollection(bucketName, dashClientId) {
     const db = mongoClient.db(mongoDBName);
     const policyFiles = await db.collection("files").find({}).toArray();
     for (const policyFile of policyFiles) {
-        const key = `${dashClientId}/${policyFile.name}`;
-        await db.collection("files").updateOne({ name: policyFile.name }, { $set: { key: key,  bucket: bucketName} });
+        const oldKeyItems = policyFile.key.split('/');
+        if(oldKeyItems.length === 2) {
+            const key = `${dashClientId}/${oldKeyItems[1]}`;
+            await db.collection("files").updateOne({ name: policyFile.name }, { $set: { key: key,  bucket: bucketName} });
+        }
     }
     await mongoClient.close();
     console.log(chalk.green.bold("Update policy files key and bucket in mongoDB completed!"));
